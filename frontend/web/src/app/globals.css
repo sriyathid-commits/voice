@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+
+  html {
+    @apply antialiased;
+  }
+
+  body {
+    @apply bg-white text-gray-900 font-sans;
+  }
+
+  /* Ensure minimum touch target sizes for accessibility */
+  button,
+  a,
+  input,
+  select {
+    @apply min-h-touch-target min-w-touch-target;
+  }
+}
+
+@layer components {
+  /* Gradient backgrounds */
+  .gradient-orange-green {
+    background: linear-gradient(135deg, #ff6b35 0%, #4caf50 100%);
+  }
+
+  /* Card styles */
+  .card {
+    @apply bg-white rounded-card shadow-md p-card-padding;
+  }
+
+  /* Button styles */
+  .btn-primary {
+    @apply h-btn-primary bg-primary-navy text-white rounded-lg font-medium text-primary-cta;
+    @apply hover:opacity-90 active:opacity-80 transition-opacity;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply h-btn-secondary bg-white text-primary-navy border border-gray-300 rounded-lg font-medium text-secondary-cta;
+    @apply hover:bg-gray-50 active:bg-gray-100 transition-colors;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Status badges */
+  .badge {
+    @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium;
+  }
+
+  .badge-success {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-warning {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-error {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .badge-info {
+    @apply bg-purple-100 text-purple-800;
+  }
+}
+
+@layer utilities {
+  /* Animation utilities */
+  .pulse-animation {
+    animation: pulse 1s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  /* Accessibility utilities */
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}

@@ -1,0 +1,55 @@
+# SAM Configuration Example
+# Copy this file to samconfig.toml and update with your values
+
+version = 0.1
+
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "voice-for-bharat-backend-dev"
+s3_bucket = "your-sam-deployment-bucket"
+s3_prefix = "voice-for-bharat"
+region = "ap-south-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=dev",
+    "TablePrefix=voice-for-bharat-dev",
+    "DocumentsBucket=voice-for-bharat-documents-dev",
+    "AudioBucket=voice-for-bharat-audio-dev",
+    "SchemeDumpsBucket=voice-for-bharat-scheme-dumps-dev",
+    "CognitoUserPoolId=your-cognito-user-pool-id"
+]
+
+[staging]
+[staging.deploy]
+[staging.deploy.parameters]
+stack_name = "voice-for-bharat-backend-staging"
+s3_bucket = "your-sam-deployment-bucket"
+s3_prefix = "voice-for-bharat"
+region = "ap-south-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=staging",
+    "TablePrefix=voice-for-bharat-staging",
+    "DocumentsBucket=voice-for-bharat-documents-staging",
+    "AudioBucket=voice-for-bharat-audio-staging",
+    "SchemeDumpsBucket=voice-for-bharat-scheme-dumps-staging",
+    "CognitoUserPoolId=your-cognito-user-pool-id"
+]
+
+[production]
+[production.deploy]
+[production.deploy.parameters]
+stack_name = "voice-for-bharat-backend-production"
+s3_bucket = "your-sam-deployment-bucket"
+s3_prefix = "voice-for-bharat"
+region = "ap-south-1"
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "Environment=production",
+    "TablePrefix=voice-for-bharat-production",
+    "DocumentsBucket=voice-for-bharat-documents-production",
+    "AudioBucket=voice-for-bharat-audio-production",
+    "SchemeDumpsBucket=voice-for-bharat-scheme-dumps-production",
+    "CognitoUserPoolId=your-cognito-user-pool-id"
+]

@@ -1,0 +1,1580 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Voice for Bharat - Backend Lambda Services
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures:
+      - arm64
+    Timeout: 30
+    MemorySize: 512
+    Environment:
+      Variables:
+        DYNAMODB_TABLE_PREFIX: !Ref TablePrefix
+        S3_DOCUMENTS_BUCKET: !Ref DocumentsBucket
+        S3_AUDIO_BUCKET: !Ref AudioBucket
+        S3_SCHEME_DUMPS_BUCKET: !Ref SchemeDumpsBucket
+        COGNITO_USER_POOL_ID: !Ref CognitoUserPool
+        COGNITO_CLIENT_ID: !Ref CognitoUserPoolClient
+        BEDROCK_REGION: !Ref AWS::Region
+        WHATSAPP_API_KEY: !Ref WhatsAppApiKey
+        REDIS_ENDPOINT: !GetAtt RedisCluster.RedisEndpoint.Address
+        REDIS_PORT: !GetAtt RedisCluster.RedisEndpoint.Port
+        CLOUDFRONT_URL: !GetAtt CloudFrontDistribution.DomainName
+        SNS_TOPIC_ARN: !Ref NotificationTopic
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - staging
+      - production
+    Description: Deployment environment
+  
+  TablePrefix:
+    Type: String
+    Default: voice-for-bharat-dev
+    Description: DynamoDB table name prefix
+  
+  WhatsAppApiKey:
+    Type: String
+    NoEcho: true
+    Description: WhatsApp Business API key for notifications
+
+Resources:
+  # ========================================
+  # DynamoDB Tables (8 tables)
+  # ========================================
+  
+  # Table 1: users
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-users
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: phoneNumber
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: cognitoId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: phoneNumber-index
+          KeySchema:
+            - AttributeName: phoneNumber
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: state-category-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: category
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: cognitoId-index
+          KeySchema:
+            - AttributeName: cognitoId
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 2: schemes
+  SchemesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-schemes
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: schemeId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: isActive
+          AttributeType: S
+        - AttributeName: lastSyncedAt
+          AttributeType: S
+        - AttributeName: viewCount
+          AttributeType: N
+      KeySchema:
+        - AttributeName: schemeId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: state-category-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: category
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: isActive-lastSyncedAt-index
+          KeySchema:
+            - AttributeName: isActive
+              KeyType: HASH
+            - AttributeName: lastSyncedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: category-viewCount-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: viewCount
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 3: applications
+  ApplicationsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-applications
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: applicationId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: schemeId
+          AttributeType: S
+        - AttributeName: submittedAt
+          AttributeType: S
+        - AttributeName: updatedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: applicationId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-status-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: schemeId-submittedAt-index
+          KeySchema:
+            - AttributeName: schemeId
+              KeyType: HASH
+            - AttributeName: submittedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: status-updatedAt-index
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+            - AttributeName: updatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 4: activity_log (with TTL)
+  ActivityLogTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-activity-log
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      AttributeDefinitions:
+        - AttributeName: activityId
+          AttributeType: S
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: timestamp
+          AttributeType: S
+        - AttributeName: type
+          AttributeType: S
+        - AttributeName: schemeId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: activityId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: userId-timestamp-index
+          KeySchema:
+            - AttributeName: userId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: type-timestamp-index
+          KeySchema:
+            - AttributeName: type
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: schemeId-timestamp-index
+          KeySchema:
+            - AttributeName: schemeId
+              KeyType: HASH
+            - AttributeName: timestamp
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 5: user_profile
+  UserProfileTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-user-profile
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: profileStrength
+          AttributeType: N
+        - AttributeName: educationLevel
+          AttributeType: S
+        - AttributeName: annualIncome
+          AttributeType: N
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: state-profileStrength-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: profileStrength
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: educationLevel-annualIncome-index
+          KeySchema:
+            - AttributeName: educationLevel
+              KeyType: HASH
+            - AttributeName: annualIncome
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 6: helplines
+  HelplinesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-helplines
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: helplineId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: isActive
+          AttributeType: S
+      KeySchema:
+        - AttributeName: helplineId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: state-category-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: category
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: isActive-state-index
+          KeySchema:
+            - AttributeName: isActive
+              KeyType: HASH
+            - AttributeName: state
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 7: guide_content
+  GuideContentTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-guide-content
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: contentId
+          AttributeType: S
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: priority
+          AttributeType: N
+        - AttributeName: lastUpdatedAt
+          AttributeType: S
+        - AttributeName: viewCount
+          AttributeType: N
+      KeySchema:
+        - AttributeName: contentId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: category-state-priority-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: priority
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: state-lastUpdatedAt-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: lastUpdatedAt
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: category-viewCount-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: viewCount
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Table 8: suggested_queries
+  SuggestedQueriesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub ${TablePrefix}-suggested-queries
+      BillingMode: PAY_PER_REQUEST
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      AttributeDefinitions:
+        - AttributeName: queryId
+          AttributeType: S
+        - AttributeName: state
+          AttributeType: S
+        - AttributeName: displayOrder
+          AttributeType: N
+        - AttributeName: category
+          AttributeType: S
+        - AttributeName: popularity
+          AttributeType: N
+        - AttributeName: isActive
+          AttributeType: S
+      KeySchema:
+        - AttributeName: queryId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: state-displayOrder-index
+          KeySchema:
+            - AttributeName: state
+              KeyType: HASH
+            - AttributeName: displayOrder
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: category-popularity-index
+          KeySchema:
+            - AttributeName: category
+              KeyType: HASH
+            - AttributeName: popularity
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: isActive-state-index
+          KeySchema:
+            - AttributeName: isActive
+              KeyType: HASH
+            - AttributeName: state
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # ========================================
+  # S3 Buckets (3 buckets)
+  # ========================================
+  
+  # Bucket 1: Documents
+  DocumentsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub voice-for-bharat-documents-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: TransitionToIA
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: STANDARD_IA
+          - Id: TransitionToGlacier
+            Status: Enabled
+            Transitions:
+              - TransitionInDays: 365
+                StorageClass: GLACIER
+          - Id: DeleteAfter7Years
+            Status: Enabled
+            ExpirationInDays: 2555
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+              - DELETE
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3000
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Bucket 2: Audio
+  AudioBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub voice-for-bharat-audio-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteConversationsAfter30Days
+            Status: Enabled
+            Prefix: conversations/
+            ExpirationInDays: 30
+          - Id: DeleteTTSCacheAfter90Days
+            Status: Enabled
+            Prefix: tts-cache/
+            ExpirationInDays: 90
+          - Id: DeleteSTTRecordingsAfter7Days
+            Status: Enabled
+            Prefix: stt-recordings/
+            ExpirationInDays: 7
+      CorsConfiguration:
+        CorsRules:
+          - AllowedOrigins:
+              - '*'
+            AllowedMethods:
+              - GET
+              - PUT
+              - POST
+            AllowedHeaders:
+              - '*'
+            MaxAge: 3000
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # Bucket 3: Scheme Dumps
+  SchemeDumpsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub voice-for-bharat-scheme-dumps-${Environment}-${AWS::AccountId}
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteDailyDumpsAfter30Days
+            Status: Enabled
+            Prefix: daily/
+            ExpirationInDays: 30
+          - Id: DeleteWeeklyDumpsAfter1Year
+            Status: Enabled
+            Prefix: weekly/
+            ExpirationInDays: 365
+          - Id: ArchiveSourceDataToGlacier
+            Status: Enabled
+            Prefix: sources/
+            Transitions:
+              - TransitionInDays: 90
+                StorageClass: GLACIER
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # ========================================
+  # Cognito User Pool
+  # ========================================
+  
+  CognitoUserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub voice-for-bharat-users-${Environment}
+      UsernameAttributes:
+        - phone_number
+      AutoVerifiedAttributes:
+        - phone_number
+      MfaConfiguration: OPTIONAL
+      EnabledMfas:
+        - SMS_MFA
+      SmsConfiguration:
+        SnsCallerArn: !GetAtt CognitoSNSRole.Arn
+        ExternalId: !Sub voice-for-bharat-${Environment}
+      Schema:
+        - Name: phone_number
+          AttributeDataType: String
+          Required: true
+          Mutable: false
+        - Name: name
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+        - Name: preferred_language
+          AttributeDataType: String
+          Required: false
+          Mutable: true
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireUppercase: false
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: verified_phone_number
+            Priority: 1
+      UserPoolTags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  CognitoUserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub voice-for-bharat-client-${Environment}
+      UserPoolId: !Ref CognitoUserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_CUSTOM_AUTH
+      PreventUserExistenceErrors: ENABLED
+      RefreshTokenValidity: 30
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      TokenValidityUnits:
+        RefreshToken: days
+        AccessToken: hours
+        IdToken: hours
+
+  CognitoSNSRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: cognito-idp.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CognitoSNSPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: '*'
+
+  # ========================================
+  # ElastiCache Redis Cluster
+  # ========================================
+  
+  RedisSubnetGroup:
+    Type: AWS::ElastiCache::SubnetGroup
+    Properties:
+      Description: Subnet group for Voice for Bharat Redis cluster
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+
+  RedisSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Voice for Bharat Redis cluster
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 6379
+          ToPort: 6379
+          SourceSecurityGroupId: !Ref LambdaSecurityGroup
+      Tags:
+        - Key: Name
+          Value: !Sub voice-for-bharat-redis-sg-${Environment}
+        - Key: Environment
+          Value: !Ref Environment
+
+  RedisCluster:
+    Type: AWS::ElastiCache::CacheCluster
+    Properties:
+      ClusterName: !Sub voice-for-bharat-redis-${Environment}
+      Engine: redis
+      CacheNodeType: cache.t3.micro
+      NumCacheNodes: 1
+      VpcSecurityGroupIds:
+        - !Ref RedisSecurityGroup
+      CacheSubnetGroupName: !Ref RedisSubnetGroup
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # ========================================
+  # VPC and Networking (for ElastiCache)
+  # ========================================
+  
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub voice-for-bharat-vpc-${Environment}
+        - Key: Environment
+          Value: !Ref Environment
+
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub voice-for-bharat-private-subnet-1-${Environment}
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: !Select [1, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Sub voice-for-bharat-private-subnet-2-${Environment}
+
+  LambdaSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for Lambda functions
+      VpcId: !Ref VPC
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub voice-for-bharat-lambda-sg-${Environment}
+
+  # ========================================
+  # CloudFront Distribution
+  # ========================================
+  
+  CloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: !Sub OAI for Voice for Bharat ${Environment}
+
+  AudioBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AudioBucket
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              CanonicalUser: !GetAtt CloudFrontOriginAccessIdentity.S3CanonicalUserId
+            Action: s3:GetObject
+            Resource: !Sub ${AudioBucket.Arn}/*
+
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Voice for Bharat CDN ${Environment}
+        DefaultCacheBehavior:
+          TargetOriginId: audio-bucket
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods:
+            - GET
+            - HEAD
+            - OPTIONS
+          CachedMethods:
+            - GET
+            - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+          Compress: true
+          DefaultTTL: 86400
+          MaxTTL: 31536000
+          MinTTL: 0
+        Origins:
+          - Id: audio-bucket
+            DomainName: !GetAtt AudioBucket.RegionalDomainName
+            S3OriginConfig:
+              OriginAccessIdentity: !Sub origin-access-identity/cloudfront/${CloudFrontOriginAccessIdentity}
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          CloudFrontDefaultCertificate: true
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # ========================================
+  # EventBridge Rules
+  # ========================================
+  
+  ApplicationEventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: !Sub voice-for-bharat-events-${Environment}
+
+  ApplicationSubmittedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub voice-for-bharat-application-submitted-${Environment}
+      EventBusName: !Ref ApplicationEventBus
+      EventPattern:
+        source:
+          - voice-for-bharat.applications
+        detail-type:
+          - ApplicationSubmitted
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt NotificationServiceFunction.Arn
+          Id: NotificationServiceTarget
+
+  ApplicationStatusChangedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub voice-for-bharat-application-status-changed-${Environment}
+      EventBusName: !Ref ApplicationEventBus
+      EventPattern:
+        source:
+          - voice-for-bharat.applications
+        detail-type:
+          - ApplicationStatusChanged
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt NotificationServiceFunction.Arn
+          Id: NotificationServiceTarget
+
+  DocumentVerifiedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub voice-for-bharat-document-verified-${Environment}
+      EventBusName: !Ref ApplicationEventBus
+      EventPattern:
+        source:
+          - voice-for-bharat.documents
+        detail-type:
+          - DocumentVerified
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt NotificationServiceFunction.Arn
+          Id: NotificationServiceTarget
+
+  EventBridgeInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref NotificationServiceFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ApplicationSubmittedRule.Arn
+
+  # ========================================
+  # SNS Topics
+  # ========================================
+  
+  NotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub voice-for-bharat-notifications-${Environment}
+      DisplayName: Voice for Bharat Notifications
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  SMSNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub voice-for-bharat-sms-${Environment}
+      DisplayName: Voice for Bharat SMS Notifications
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  EmailNotificationTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub voice-for-bharat-email-${Environment}
+      DisplayName: Voice for Bharat Email Notifications
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Application
+          Value: voice-for-bharat
+
+  # ========================================
+  # API Gateway
+  # ========================================
+  VoiceForBharatApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub voice-for-bharat-api-${Environment}
+      StageName: !Ref Environment
+      Cors:
+        AllowMethods: "'GET,POST,PUT,DELETE,OPTIONS'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: CognitoAuthorizer
+        Authorizers:
+          CognitoAuthorizer:
+            UserPoolArn: !GetAtt CognitoUserPool.Arn
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: "'*'"
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # WebSocket API for Voice Service
+  VoiceWebSocketApi:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub voice-for-bharat-ws-${Environment}
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: $request.body.action
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  VoiceWebSocketStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId: !Ref VoiceWebSocketApi
+      StageName: !Ref Environment
+      AutoDeploy: true
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # ========================================
+  # Lambda Execution Role
+  # ========================================
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub voice-for-bharat-lambda-role-${Environment}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole
+      Policies:
+        - PolicyName: DynamoDBAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                Resource:
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}-*
+                  - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TablePrefix}-*/index/*
+        - PolicyName: S3Access
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub ${DocumentsBucket.Arn}/*
+                  - !Sub ${AudioBucket.Arn}/*
+                  - !Sub ${SchemeDumpsBucket.Arn}/*
+              - Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt DocumentsBucket.Arn
+                  - !GetAtt AudioBucket.Arn
+                  - !GetAtt SchemeDumpsBucket.Arn
+        - PolicyName: BedrockAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: '*'
+        - PolicyName: CognitoAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:AdminUpdateUserAttributes
+                Resource: !GetAtt CognitoUserPool.Arn
+        - PolicyName: SNSAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource:
+                  - !Ref NotificationTopic
+                  - !Ref SMSNotificationTopic
+                  - !Ref EmailNotificationTopic
+        - PolicyName: EventBridgeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - events:PutEvents
+                Resource: !GetAtt ApplicationEventBus.Arn
+        - PolicyName: TextractAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - textract:DetectDocumentText
+                  - textract:AnalyzeDocument
+                Resource: '*'
+        - PolicyName: ElastiCacheAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - elasticache:DescribeCacheClusters
+                Resource: '*'
+
+  # ========================================
+  # Lambda Functions
+  # ========================================
+  
+  # User Service Lambda
+  UserServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-user-service-${Environment}
+      CodeUri: lambdas/user_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        RegisterUser:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /register
+            Method: POST
+            Auth:
+              Authorizer: NONE
+        VerifyOTP:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /verify-otp
+            Method: POST
+            Auth:
+              Authorizer: NONE
+        GetProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /profile
+            Method: GET
+        UpdateProfile:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /profile
+            Method: PUT
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Voice Service Lambda (Critical Path - 2GB, 300s)
+  VoiceServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-voice-service-${Environment}
+      CodeUri: lambdas/voice_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 2048
+      Timeout: 300
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        ProcessVoiceQuery:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /voice/query
+            Method: POST
+        GetSession:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /voice/session/{session_id}
+            Method: GET
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Scheme Service Lambda (1GB, 60s)
+  SchemeServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-scheme-service-${Environment}
+      CodeUri: lambdas/scheme_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 1024
+      Timeout: 60
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        GetSchemes:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /schemes
+            Method: GET
+        GetSchemeDetails:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /schemes/{scheme_id}
+            Method: GET
+        CheckEligibility:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /schemes/{scheme_id}/check-eligibility
+            Method: POST
+        SaveScheme:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /schemes/{scheme_id}/save
+            Method: POST
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Application Service Lambda
+  ApplicationServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-application-service-${Environment}
+      CodeUri: lambdas/application_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 60
+      VpcConfig:
+        SecurityGroupIds:
+          - !Ref LambdaSecurityGroup
+        SubnetIds:
+          - !Ref PrivateSubnet1
+          - !Ref PrivateSubnet2
+      Events:
+        CreateApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /applications
+            Method: POST
+        ListApplications:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /applications
+            Method: GET
+        GetApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /applications/{application_id}
+            Method: GET
+        UpdateApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /applications/{application_id}
+            Method: PUT
+        SubmitApplication:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /applications/{application_id}/submit
+            Method: POST
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Document Service Lambda (1GB, 60s)
+  DocumentServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-document-service-${Environment}
+      CodeUri: lambdas/document_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 1024
+      Timeout: 60
+      Events:
+        UploadDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /documents/upload
+            Method: POST
+        GetDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /documents/{document_id}
+            Method: GET
+        DeleteDocument:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /documents/{document_id}
+            Method: DELETE
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Notification Service Lambda
+  NotificationServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-notification-service-${Environment}
+      CodeUri: lambdas/notification_service/
+      Handler: handler.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Events:
+        SendNotification:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /notifications/send
+            Method: POST
+        GetNotificationHistory:
+          Type: Api
+          Properties:
+            RestApiId: !Ref VoiceForBharatApi
+            Path: /notifications/history
+            Method: GET
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+  # Sync Service Lambda (1GB, 300s, scheduled)
+  SyncServiceFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub voice-for-bharat-sync-service-${Environment}
+      CodeUri: lambdas/sync_service/
+      Handler: handler.scheduled_handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 1024
+      Timeout: 300
+      Events:
+        DailySync:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 2 * * ? *)
+            Description: Daily scheme data sync at 2 AM UTC
+      Tags:
+        Environment: !Ref Environment
+        Application: voice-for-bharat
+
+Outputs:
+  # API Endpoints
+  ApiEndpoint:
+    Description: API Gateway endpoint URL
+    Value: !Sub https://${VoiceForBharatApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndpoint
+  
+  WebSocketEndpoint:
+    Description: WebSocket API endpoint URL
+    Value: !Sub wss://${VoiceWebSocketApi}.execute-api.${AWS::Region}.amazonaws.com/${Environment}
+    Export:
+      Name: !Sub ${AWS::StackName}-WebSocketEndpoint
+  
+  CloudFrontURL:
+    Description: CloudFront distribution URL for audio content
+    Value: !GetAtt CloudFrontDistribution.DomainName
+    Export:
+      Name: !Sub ${AWS::StackName}-CloudFrontURL
+  
+  # DynamoDB Tables
+  UsersTableName:
+    Description: Users DynamoDB table name
+    Value: !Ref UsersTable
+    Export:
+      Name: !Sub ${AWS::StackName}-UsersTable
+  
+  SchemesTableName:
+    Description: Schemes DynamoDB table name
+    Value: !Ref SchemesTable
+    Export:
+      Name: !Sub ${AWS::StackName}-SchemesTable
+  
+  ApplicationsTableName:
+    Description: Applications DynamoDB table name
+    Value: !Ref ApplicationsTable
+    Export:
+      Name: !Sub ${AWS::StackName}-ApplicationsTable
+  
+  ActivityLogTableName:
+    Description: Activity Log DynamoDB table name
+    Value: !Ref ActivityLogTable
+    Export:
+      Name: !Sub ${AWS::StackName}-ActivityLogTable
+  
+  UserProfileTableName:
+    Description: User Profile DynamoDB table name
+    Value: !Ref UserProfileTable
+    Export:
+      Name: !Sub ${AWS::StackName}-UserProfileTable
+  
+  HelplinesTableName:
+    Description: Helplines DynamoDB table name
+    Value: !Ref HelplinesTable
+    Export:
+      Name: !Sub ${AWS::StackName}-HelplinesTable
+  
+  GuideContentTableName:
+    Description: Guide Content DynamoDB table name
+    Value: !Ref GuideContentTable
+    Export:
+      Name: !Sub ${AWS::StackName}-GuideContentTable
+  
+  SuggestedQueriesTableName:
+    Description: Suggested Queries DynamoDB table name
+    Value: !Ref SuggestedQueriesTable
+    Export:
+      Name: !Sub ${AWS::StackName}-SuggestedQueriesTable
+  
+  # S3 Buckets
+  DocumentsBucketName:
+    Description: Documents S3 bucket name
+    Value: !Ref DocumentsBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-DocumentsBucket
+  
+  AudioBucketName:
+    Description: Audio S3 bucket name
+    Value: !Ref AudioBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-AudioBucket
+  
+  SchemeDumpsBucketName:
+    Description: Scheme Dumps S3 bucket name
+    Value: !Ref SchemeDumpsBucket
+    Export:
+      Name: !Sub ${AWS::StackName}-SchemeDumpsBucket
+  
+  # Cognito
+  CognitoUserPoolId:
+    Description: Cognito User Pool ID
+    Value: !Ref CognitoUserPool
+    Export:
+      Name: !Sub ${AWS::StackName}-CognitoUserPoolId
+  
+  CognitoUserPoolClientId:
+    Description: Cognito User Pool Client ID
+    Value: !Ref CognitoUserPoolClient
+    Export:
+      Name: !Sub ${AWS::StackName}-CognitoUserPoolClientId
+  
+  # ElastiCache
+  RedisEndpoint:
+    Description: Redis cluster endpoint
+    Value: !GetAtt RedisCluster.RedisEndpoint.Address
+    Export:
+      Name: !Sub ${AWS::StackName}-RedisEndpoint
+  
+  RedisPort:
+    Description: Redis cluster port
+    Value: !GetAtt RedisCluster.RedisEndpoint.Port
+    Export:
+      Name: !Sub ${AWS::StackName}-RedisPort
+  
+  # EventBridge
+  ApplicationEventBusName:
+    Description: Application EventBridge event bus name
+    Value: !Ref ApplicationEventBus
+    Export:
+      Name: !Sub ${AWS::StackName}-ApplicationEventBus
+  
+  # SNS Topics
+  NotificationTopicArn:
+    Description: Main notification SNS topic ARN
+    Value: !Ref NotificationTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-NotificationTopic
+  
+  SMSNotificationTopicArn:
+    Description: SMS notification SNS topic ARN
+    Value: !Ref SMSNotificationTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-SMSNotificationTopic
+  
+  EmailNotificationTopicArn:
+    Description: Email notification SNS topic ARN
+    Value: !Ref EmailNotificationTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-EmailNotificationTopic
+  
+  # Lambda Functions
+  UserServiceArn:
+    Description: User Service Lambda ARN
+    Value: !GetAtt UserServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-UserServiceArn
+  
+  VoiceServiceArn:
+    Description: Voice Service Lambda ARN
+    Value: !GetAtt VoiceServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-VoiceServiceArn
+  
+  SchemeServiceArn:
+    Description: Scheme Service Lambda ARN
+    Value: !GetAtt SchemeServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-SchemeServiceArn
+  
+  ApplicationServiceArn:
+    Description: Application Service Lambda ARN
+    Value: !GetAtt ApplicationServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-ApplicationServiceArn
+  
+  DocumentServiceArn:
+    Description: Document Service Lambda ARN
+    Value: !GetAtt DocumentServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-DocumentServiceArn
+  
+  NotificationServiceArn:
+    Description: Notification Service Lambda ARN
+    Value: !GetAtt NotificationServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-NotificationServiceArn
+  
+  SyncServiceArn:
+    Description: Sync Service Lambda ARN
+    Value: !GetAtt SyncServiceFunction.Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-SyncServiceArn
+  
+  # VPC
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+    Export:
+      Name: !Sub ${AWS::StackName}-VPC
+  
+  PrivateSubnet1Id:
+    Description: Private Subnet 1 ID
+    Value: !Ref PrivateSubnet1
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet1
+  
+  PrivateSubnet2Id:
+    Description: Private Subnet 2 ID
+    Value: !Ref PrivateSubnet2
+    Export:
+      Name: !Sub ${AWS::StackName}-PrivateSubnet2
+  
+  LambdaSecurityGroupId:
+    Description: Lambda Security Group ID
+    Value: !Ref LambdaSecurityGroup
+    Export:
+      Name: !Sub ${AWS::StackName}-LambdaSecurityGroup

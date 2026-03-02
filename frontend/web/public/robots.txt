@@ -1,0 +1,9 @@
+# https://www.robotstxt.org/robotstxt.html
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /dashboard/
+Disallow: /assistant/
+Disallow: /guide/
+
+Sitemap: https://voiceforbharat.in/sitemap.xml

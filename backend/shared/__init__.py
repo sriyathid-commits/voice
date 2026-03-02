@@ -1,0 +1,146 @@
+"""
+Voice for Bharat - Shared Backend Utilities
+
+This package contains shared constants, models, and utility functions
+used across all Lambda services.
+"""
+
+from .constants import (
+    SUPPORTED_LANGUAGES,
+    LANGUAGE_NAMES,
+    BEDROCK_LOCALES,
+    INDIAN_STATES,
+    SCHEME_CATEGORIES,
+    APPLICATION_STATUSES,
+    DOCUMENT_TYPES,
+    ACTIVITY_TYPES,
+    VOICE_INTENTS,
+    NOTIFICATION_CHANNELS,
+    S3_DOCUMENTS_BUCKET,
+    S3_AUDIO_BUCKET,
+    S3_SCHEME_DUMPS_BUCKET,
+    DYNAMODB_TABLES,
+    CACHE_TTL,
+    RATE_LIMITS,
+    BEDROCK_MODELS,
+    CONFIDENCE_THRESHOLDS
+)
+
+from .models import (
+    BankDetails,
+    UserProfile,
+    UserPreferences,
+    User,
+    Rule,
+    EligibilityCriteria,
+    Scheme,
+    DocumentReference,
+    StatusChange,
+    Application,
+    Message,
+    ConversationContext,
+    ConversationSession,
+    Helpline,
+    GuideContent,
+    SuggestedQuery
+)
+
+from .utils import (
+    get_dynamodb_client,
+    get_dynamodb_resource,
+    get_s3_client,
+    get_bedrock_client,
+    get_cognito_client,
+    get_sns_client,
+    get_eventbridge_client,
+    generate_presigned_url,
+    generate_presigned_post,
+    get_document_s3_key,
+    get_application_document_s3_key,
+    get_audio_s3_key,
+    get_tts_cache_s3_key,
+    get_stt_recording_s3_key,
+    upload_to_s3,
+    download_from_s3,
+    delete_from_s3,
+    check_s3_object_exists,
+    calculate_profile_strength,
+    get_table_name,
+    hash_text,
+    get_multilingual_text,
+    validate_indian_phone,
+    validate_aadhaar,
+    validate_pan,
+    format_timestamp,
+    parse_timestamp
+)
+
+__version__ = "1.0.0"
+__all__ = [
+    # Constants
+    "SUPPORTED_LANGUAGES",
+    "LANGUAGE_NAMES",
+    "BEDROCK_LOCALES",
+    "INDIAN_STATES",
+    "SCHEME_CATEGORIES",
+    "APPLICATION_STATUSES",
+    "DOCUMENT_TYPES",
+    "ACTIVITY_TYPES",
+    "VOICE_INTENTS",
+    "NOTIFICATION_CHANNELS",
+    "S3_DOCUMENTS_BUCKET",
+    "S3_AUDIO_BUCKET",
+    "S3_SCHEME_DUMPS_BUCKET",
+    "DYNAMODB_TABLES",
+    "CACHE_TTL",
+    "RATE_LIMITS",
+    "BEDROCK_MODELS",
+    "CONFIDENCE_THRESHOLDS",
+    # Models
+    "BankDetails",
+    "UserProfile",
+    "UserPreferences",
+    "User",
+    "Rule",
+    "EligibilityCriteria",
+    "Scheme",
+    "DocumentReference",
+    "StatusChange",
+    "Application",
+    "Message",
+    "ConversationContext",
+    "ConversationSession",
+    "Helpline",
+    "GuideContent",
+    "SuggestedQuery",
+    # Utils - AWS Clients
+    "get_dynamodb_client",
+    "get_dynamodb_resource",
+    "get_s3_client",
+    "get_bedrock_client",
+    "get_cognito_client",
+    "get_sns_client",
+    "get_eventbridge_client",
+    # Utils - S3 Operations
+    "generate_presigned_url",
+    "generate_presigned_post",
+    "get_document_s3_key",
+    "get_application_document_s3_key",
+    "get_audio_s3_key",
+    "get_tts_cache_s3_key",
+    "get_stt_recording_s3_key",
+    "upload_to_s3",
+    "download_from_s3",
+    "delete_from_s3",
+    "check_s3_object_exists",
+    # Utils - Other
+    "calculate_profile_strength",
+    "get_table_name",
+    "hash_text",
+    "get_multilingual_text",
+    "validate_indian_phone",
+    "validate_aadhaar",
+    "validate_pan",
+    "format_timestamp",
+    "parse_timestamp"
+]
