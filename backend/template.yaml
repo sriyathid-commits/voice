@@ -1105,6 +1105,26 @@ Resources:
                   - textract:DetectDocumentText
                   - textract:AnalyzeDocument
                 Resource: '*'
+        - PolicyName: TranscribeAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - transcribe:StartTranscriptionJob
+                  - transcribe:GetTranscriptionJob
+                  - transcribe:ListTranscriptionJobs
+                  - transcribe:DeleteTranscriptionJob
+                Resource: '*'
+        - PolicyName: PollyAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - polly:SynthesizeSpeech
+                  - polly:DescribeVoices
+                Resource: '*'
         - PolicyName: ElastiCacheAccess
           PolicyDocument:
             Version: '2012-10-17'
@@ -1188,12 +1208,16 @@ Resources:
             RestApiId: !Ref VoiceForBharatApi
             Path: /voice/query
             Method: POST
+            Auth:
+              Authorizer: NONE
         GetSession:
           Type: Api
           Properties:
             RestApiId: !Ref VoiceForBharatApi
             Path: /voice/session/{session_id}
             Method: GET
+            Auth:
+              Authorizer: NONE
       Tags:
         Environment: !Ref Environment
         Application: voice-for-bharat

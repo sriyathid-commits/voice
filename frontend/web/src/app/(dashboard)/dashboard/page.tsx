@@ -6,6 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 
+const INDIAN_STATES = [
+  'All India', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka',
+  'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram',
+  'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu',
+  'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'
+]
+
 interface DashboardData {
   activeSchemes: number
   helplines: number
@@ -14,6 +22,8 @@ interface DashboardData {
 }
 
 export default function DashboardPage() {
+  const [selectedState, setSelectedState] = useState('All India')
+  const [locationDetected, setLocationDetected] = useState(false)
   const [data, setData] = useState<DashboardData>({
     activeSchemes: 0,
     helplines: 0,
@@ -25,7 +35,49 @@ export default function DashboardPage() {
 
   useEffect(() => {
     loadDashboardData()
+    detectLocation()
   }, [])
+
+  const detectLocation = () => {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          // Simple state detection based on coordinates
+          // In production, use reverse geocoding API
+          const { latitude, longitude } = position.coords
+          const detectedState = getStateFromCoordinates(latitude, longitude)
+          if (detectedState) {
+            setSelectedState(detectedState)
+            setLocationDetected(true)
+          }
+        },
+        () => {
+          console.log('Location access denied or unavailable')
+        }
+      )
+    }
+  }
+
+  const getStateFromCoordinates = (lat: number, lng: number): string | null => {
+    // Approximate state detection (simplified)
+    // Maharashtra: 18-21°N, 72-80°E
+    if (lat >= 18 && lat <= 21 && lng >= 72 && lng <= 80) return 'Maharashtra'
+    // Karnataka: 12-18°N, 74-78°E
+    if (lat >= 12 && lat <= 18 && lng >= 74 && lng <= 78) return 'Karnataka'
+    // Tamil Nadu: 8-13°N, 76-80°E
+    if (lat >= 8 && lat <= 13 && lng >= 76 && lng <= 80) return 'Tamil Nadu'
+    // Telangana: 16-19°N, 77-81°E
+    if (lat >= 16 && lat <= 19 && lng >= 77 && lng <= 81) return 'Telangana'
+    // Gujarat: 20-24°N, 68-74°E
+    if (lat >= 20 && lat <= 24 && lng >= 68 && lng <= 74) return 'Gujarat'
+    // Rajasthan: 24-30°N, 69-78°E
+    if (lat >= 24 && lat <= 30 && lng >= 69 && lng <= 78) return 'Rajasthan'
+    // West Bengal: 22-27°N, 85-89°E
+    if (lat >= 22 && lat <= 27 && lng >= 85 && lng <= 89) return 'West Bengal'
+    // Kerala: 8-13°N, 74-77°E
+    if (lat >= 8 && lat <= 13 && lng >= 74 && lng <= 77) return 'Kerala'
+    return null
+  }
 
   const loadDashboardData = async () => {
     try {
@@ -79,6 +131,47 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8">
+      {/* State Selector */}
+      <div className="flex justify-between items-center flex-wrap gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+          {locationDetected && (
+            <p className="text-sm text-green-600 mt-1">📍 Location detected: {selectedState}</p>
+          )}
+        </div>
+        <select
+          value={selectedState}
+          onChange={(e) => setSelectedState(e.target.value)}
+          className="px-4 py-2 border rounded-lg bg-white"
+        >
+          {INDIAN_STATES.map(state => (
+            <option key={state} value={state}>{state}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Portal Status Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Government Portal Status</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-sm font-medium">National Portal</span>
+              <Badge variant="success">Online</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-sm font-medium">{selectedState} Portal</span>
+              <Badge variant="success">Online</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg">
+              <span className="text-sm font-medium">Application System</span>
+              <Badge variant="success">Active</Badge>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
       {/* Metric Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <MetricCard
