@@ -295,5 +295,161 @@ def sync_scheme_data(request: SyncSchemeDataRequest):
         raise HTTPException(status_code=500, detail=f"Error syncing scheme data: {str(e)}")
 
 
+# POST /schemes/{scheme_id}/eligibility-explanation - Get detailed eligibility explanation
+@app.post("/schemes/{scheme_id}/eligibility-explanation")
+def get_eligibility_explanation(
+    scheme_id: str,
+    request: EligibilityCheckRequest,
+    language: str = Query("en", description="Language code")
+):
+    """
+    Get detailed eligibility explanation with status determination
+    
+    Path Parameters:
+    - scheme_id: Unique scheme identifier
+    
+    Request Body:
+    - user_profile: User profile data
+    
+    Query Parameters:
+    - language: Language for multilingual content (default: en)
+    
+    Returns:
+    - Structured eligibility explanation with status (ELIGIBLE, LIKELY_ELIGIBLE, NEEDS_VERIFICATION, NOT_ELIGIBLE)
+    - Matched conditions
+    - Match reasons
+    - Missing information
+    - Verification required items
+    - Eligibility criteria summary
+    """
+    try:
+        # Get scheme
+        scheme = scheme_service.get_scheme_by_id(scheme_id, language=language)
+        if not scheme:
+            raise HTTPException(status_code=404, detail="Scheme not found")
+        
+        # Check eligibility
+        eligibility = scheme_service.check_eligibility(
+            scheme_id=scheme_id,
+            user_profile=request.user_profile
+        )
+        
+        # Determine status from score
+        score = eligibility["score"]
+        if score >= 80:
+            status = "ELIGIBLE"
+        elif score >= 60:
+            status = "LIKELY_ELIGIBLE"
+        elif score >= 40:
+            status = "NEEDS_VERIFICATION"
+        else:
+            status = "NOT_ELIGIBLE"
+        
+        # Build matched conditions list
+        matched_conditions = []
+        if eligibility["match_reasons"]:
+            matched_conditions = eligibility["match_reasons"]
+        
+        # Build verification required list (items in missing_info that are critical)
+        verification_required = []
+        for item in eligibility["missing_info"]:
+            if "not provided" in item.lower():
+                verification_required.append(item)
+        
+        # Get eligibility criteria summary
+        criteria = scheme.get("eligibility_criteria", {})
+        criteria_summary = {
+            "age_range": f"{criteria.get('min_age', 0)}-{criteria.get('max_age', '∞')}",
+            "eligible_genders": criteria.get("gender", ["ALL"]),
+            "income_limit": criteria.get("income_limit"),
+            "eligible_categories": criteria.get("categories", ["ALL"]),
+            "eligible_states": criteria.get("states", ["ALL"])
+        }
+        
+        return {
+            "success": True,
+            "explanation": {
+                "scheme_id": scheme_id,
+                "scheme_name": scheme.get("name", {}),
+                "status": status,
+                "score": score,
+                "matched_conditions": matched_conditions,
+                "match_reasons": eligibility["match_reasons"],
+                "missing_information": eligibility["missing_info"],
+                "verification_required": verification_required,
+                "eligibility_criteria_summary": criteria_summary
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating eligibility explanation: {str(e)}")
+
+
+# POST /schemes/{scheme_id}/action-plan - Generate citizen action plan
+@app.post("/schemes/{scheme_id}/action-plan")
+def generate_action_plan(
+    scheme_id: str,
+    user_profile: dict,
+    available_documents: List[str] = Query([], description="Documents user currently has"),
+    language: str = Query("en", description="Language code")
+):
+    """
+    Generate actionable citizen plan for scheme application
+    
+    Path Parameters:
+    - scheme_id: Unique scheme identifier
+    
+    Query Parameters:
+    - available_documents: List of documents user currently has
+    - language: Language for multilingual content (default: en)
+    
+    Request Body:
+    - User profile data for eligibility check
+    
+    Returns:
+    - Complete action plan with:
+      - Eligibility status
+      - Required vs available documents
+      - Missing documents
+      - Step-by-step action items
+      - Application method
+      - Portal URL
+      - Estimated time
+      - Helpful notes
+    """
+    try:
+        from action_plan_generator import ActionPlanGenerator
+        
+        # Get scheme
+        scheme = scheme_service.get_scheme_by_id(scheme_id, language=language)
+        if not scheme:
+            raise HTTPException(status_code=404, detail="Scheme not found")
+        
+        # Check eligibility
+        eligibility = scheme_service.check_eligibility(
+            scheme_id=scheme_id,
+            user_profile=user_profile
+        )
+        
+        # Generate action plan
+        action_plan_gen = ActionPlanGenerator()
+        action_plan = action_plan_gen.generate_action_plan(
+            scheme=scheme,
+            eligibility=eligibility,
+            available_documents=available_documents,
+            language=language
+        )
+        
+        return {
+            "success": True,
+            "action_plan": action_plan
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating action plan: {str(e)}")
+
+
 # Lambda handler
 handler = Mangum(app, lifespan="off")

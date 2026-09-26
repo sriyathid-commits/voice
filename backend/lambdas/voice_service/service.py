@@ -1,6 +1,12 @@
 """
-Voice Service - Real AI Implementation
-Uses Amazon Transcribe (STT), Bedrock Claude (NLU), and Polly (TTS)
+Voice Service - Conversational AI Implementation
+Enhanced for PS6: AI for Bharat in Indian Languages
+
+Features:
+- Conversational context management
+- Progressive citizen profile building
+- Scheme search integration
+- Multilingual support (6 Indian languages)
 """
 import os
 import json
@@ -9,17 +15,21 @@ import hashlib
 import logging
 import uuid
 import time
-from typing import Dict, Any, Optional
+import re
+from typing import Dict, Any, Optional, List
 from datetime import datetime
 import boto3
 from botocore.exceptions import ClientError
+
+from conversation_manager import ConversationManager
+from models import CitizenProfile
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
 class VoiceService:
-    """Service for processing voice queries with real AWS AI services"""
+    """Service for processing voice queries with conversational context"""
     
     def __init__(self):
         self.region = os.getenv("AWS_REGION", "ap-south-1")
@@ -29,10 +39,18 @@ class VoiceService:
         self.transcribe_client = boto3.client('transcribe', region_name=self.region)
         self.bedrock_client = boto3.client('bedrock-runtime', region_name=self.region)
         self.polly_client = boto3.client('polly', region_name=self.region)
+        self.dynamodb = boto3.resource('dynamodb', region_name=self.region)
         
         # Configuration
         self.audio_bucket = os.getenv("S3_AUDIO_BUCKET")
         self.claude_model = "anthropic.claude-3-sonnet-20240229-v1:0"
+        
+        # Conversation Manager
+        self.conversation_manager = ConversationManager()
+        
+        # DynamoDB tables
+        table_prefix = os.getenv("DYNAMODB_TABLE_PREFIX", "voice-for-bharat")
+        self.schemes_table = self.dynamodb.Table(f"{table_prefix}-schemes")
         
         # Language mappings
         self.language_codes = {
@@ -49,8 +67,8 @@ class VoiceService:
             "hi": {"VoiceId": "Aditi", "Engine": "neural"},
             "ta": {"VoiceId": "Kajal", "Engine": "neural"},
             "te": {"VoiceId": "Kajal", "Engine": "neural"},
-            "mr": {"VoiceId": "Aditi", "Engine": "neural"},  # Fallback to Hindi voice
-            "kn": {"VoiceId": "Aditi", "Engine": "neural"}   # Fallback to Hindi voice
+            "mr": {"VoiceId": "Aditi", "Engine": "neural"},
+            "kn": {"VoiceId": "Aditi", "Engine": "neural"}
         }
     
     async def process_voice_query(
@@ -60,7 +78,7 @@ class VoiceService:
         user_id: str = None
     ) -> Dict[str, Any]:
         """
-        Complete voice processing pipeline
+        Complete voice processing pipeline (Legacy - maintained for backward compatibility)
         
         Args:
             audio_data: Audio file bytes (WAV/MP3)
@@ -70,8 +88,42 @@ class VoiceService:
         Returns:
             Response with text and audio URL
         """
+        # Call new conversational method
+        return await self.process_voice_query_with_context(
+            audio_data=audio_data,
+            language=language,
+            user_id=user_id,
+            session_id=None
+        )
+    
+    async def process_voice_query_with_context(
+        self,
+        audio_data: bytes,
+        language: str = "hi",
+        user_id: str = None,
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Complete voice processing pipeline with conversational context
+        
+        Args:
+            audio_data: Audio file bytes (WAV/MP3)
+            language: Language code (en, hi, ta, te, mr, kn)
+            user_id: User identifier
+            session_id: Optional session ID for conversation continuity
+        
+        Returns:
+            Response with text, audio URL, and updated conversation context
+        """
         try:
-            logger.info(f"Processing voice query - Language: {language}, User: {user_id}")
+            logger.info(f"Processing voice query - Language: {language}, User: {user_id}, Session: {session_id}")
+            
+            # Get or create conversation session
+            session = self.conversation_manager.get_or_create_session(
+                session_id=session_id,
+                user_id=user_id,
+                language=language
+            )
             
             # Step 1: Upload audio to S3
             audio_key = f"user-audio/{user_id}/{uuid.uuid4()}.wav"
@@ -89,33 +141,73 @@ class VoiceService:
             if not transcription or transcription.get("confidence", 0) < 0.5:
                 return await self._generate_error_response(
                     "I'm sorry, I couldn't understand that. Could you please repeat?",
-                    language
+                    language,
+                    session.session_id
                 )
             
             user_text = transcription["text"]
             logger.info(f"Transcribed: {user_text}")
             
-            # Step 3: Process with Claude AI
-            ai_response = await self.process_with_claude(user_text, language, user_id)
+            # Add user message to session
+            self.conversation_manager.add_message(
+                session=session,
+                role="USER",
+                content=user_text
+            )
             
-            # Step 4: Synthesize speech response
+            # Step 3: Extract intent and entities
+            intent, entities = self._extract_intent_and_entities(user_text, language)
+            
+            # Step 4: Update citizen profile with extracted information
+            if entities:
+                self.conversation_manager.update_citizen_profile(session, entities)
+            
+            # Step 5: Determine what information is still needed
+            profile_gaps = self.conversation_manager.get_profile_gaps(
+                session.citizen_profile,
+                required_for_intent=intent
+            )
+            
+            # Step 6: Process with Claude AI (context-aware)
+            ai_response = await self.process_with_claude_contextual(
+                user_text=user_text,
+                language=language,
+                session=session,
+                intent=intent,
+                profile_gaps=profile_gaps
+            )
+            
+            # Step 7: Add assistant message to session
             audio_url = await self.synthesize_speech(ai_response, language)
+            self.conversation_manager.add_message(
+                session=session,
+                role="ASSISTANT",
+                content=ai_response,
+                audio_url=audio_url,
+                intent=intent,
+                entities=entities
+            )
             
-            # Step 5: Return complete response
+            # Step 8: Return complete response
             return {
                 "success": True,
                 "user_text": user_text,
                 "response_text": ai_response,
                 "audio_url": audio_url,
+                "session_id": session.session_id,
                 "language": language,
-                "confidence": transcription.get("confidence", 0.9)
+                "confidence": transcription.get("confidence", 0.9),
+                "citizen_profile": session.citizen_profile.model_dump(),
+                "current_intent": intent,
+                "profile_gaps": profile_gaps
             }
             
         except Exception as e:
             logger.error(f"Voice processing error: {str(e)}", exc_info=True)
             return await self._generate_error_response(
                 "I'm having trouble processing your request. Please try again.",
-                language
+                language,
+                session_id
             )
     
     async def transcribe_audio(
@@ -400,7 +492,8 @@ Respond ONLY in {lang_name}. Be helpful and empathetic."""
     async def _generate_error_response(
         self,
         error_message: str,
-        language: str
+        language: str,
+        session_id: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate error response with audio"""
         
@@ -422,5 +515,277 @@ Respond ONLY in {lang_name}. Be helpful and empathetic."""
             "error": error_message,
             "response_text": localized_message,
             "audio_url": audio_url,
-            "language": language
+            "language": language,
+            "session_id": session_id
+        }
+    
+    def _extract_intent_and_entities(
+        self,
+        user_text: str,
+        language: str
+    ) -> tuple[str, Dict[str, Any]]:
+        """
+        Extract intent and entities from user text
+        
+        Args:
+            user_text: User's transcribed text
+            language: Language code
+        
+        Returns:
+            Tuple of (intent, entities dict)
+        """
+        entities = {}
+        intent = "GENERAL_QUERY"
+        
+        # Normalize text for pattern matching
+        text_lower = user_text.lower()
+        
+        # Intent detection patterns by language
+        scheme_keywords = {
+            "en": ["scheme", "schemes", "program", "benefit", "welfare", "apply"],
+            "hi": ["योजना", "योजनाओं", "कार्यक्रम", "लाभ", "आवेदन"],
+            "te": ["పథకం", "పథకాలు", "కార్యక్రమం", "ప్రయోజనం", "దరఖాస్తు"],
+            "ta": ["திட்டம்", "திட்டங்கள்", "திட்டவரை", "நன்மை", "விண்ணப்பம்"],
+            "mr": ["योजना", "योजनांची", "कार्यक्रम", "लाभ", "अर्ज"],
+            "kn": ["ಯೋಜನೆ", "ಯೋಜನೆಗಳು", "ಕಾರ್ಯಕ್ರಮ", "ಪ್ರಯೋಜನ", "ಅರ್ಜಿ"]
+        }
+        
+        farmer_keywords = {
+            "en": ["farmer", "agriculture", "farming", "crop", "land"],
+            "hi": ["किसान", "कृषि", "खेती", "फसल", "जमीन"],
+            "te": ["రైతు", "వ్యవసాయం", "పంట", "భూమి"],
+            "ta": ["விவசாயி", "விவசாயம்", "பயிர்", "நிலம்"],
+            "mr": ["शेतकरी", "शेती", "पीक", "जमीन"],
+            "kn": ["ರೈತ", "ಕೃಷಿ", "ಬೆಳೆ", "ಭೂಮಿ"]
+        }
+        
+        student_keywords = {
+            "en": ["student", "education", "scholarship", "study", "college"],
+            "hi": ["छात्र", "शिक्षा", "छात्रवृत्ति", "अध्ययन", "कॉलेज"],
+            "te": ["విద్యార్థి", "విద్య", "స్కాలర్‌షిప్", "చదువు", "కాలేజీ"],
+            "ta": ["மாணவர்", "கல்வி", "புலமைப்பரிசில்", "படிப்பு", "கல்லூரி"],
+            "mr": ["विद्यार्थी", "शिक्षण", "शिष्यवृत्ती", "अभ्यास", "महाविद्यालय"],
+            "kn": ["ವಿದ್ಯಾರ್ಥಿ", "ಶಿಕ್ಷಣ", "ವಿದ್ಯಾರ್ಥಿವೇತನ", "ಅಧ್ಯಯನ", "ಕಾಲೇಜು"]
+        }
+        
+        # Detect scheme search intent
+        for keyword in scheme_keywords.get(language, scheme_keywords["en"]):
+            if keyword in text_lower:
+                intent = "SEARCH_SCHEMES"
+                break
+        
+        # Extract farmer occupation
+        for keyword in farmer_keywords.get(language, farmer_keywords["en"]):
+            if keyword in text_lower:
+                entities["is_farmer"] = True
+                entities["occupation"] = "farmer"
+                break
+        
+        # Extract student occupation
+        for keyword in student_keywords.get(language, student_keywords["en"]):
+            if keyword in text_lower:
+                entities["is_student"] = True
+                entities["occupation"] = "student"
+                break
+        
+        # Extract state mentions (simple pattern matching)
+        state_patterns = {
+            "telangana": "TS", "తెలంగాణ": "TS",
+            "andhra pradesh": "AP", "ఆంధ్ర": "AP",
+            "karnataka": "KA", "ಕರ್ನಾಟಕ": "KA",
+            "tamil nadu": "TN", "தமிழ்நாடு": "TN",
+            "maharashtra": "MH", "महाराष्ट्र": "MH",
+            "kerala": "KL", "കേരളം": "KL"
+        }
+        
+        for state_name, state_code in state_patterns.items():
+            if state_name in text_lower:
+                entities["state"] = state_code
+                break
+        
+        logger.info(f"Extracted intent: {intent}, entities: {entities}")
+        return intent, entities
+    
+    async def process_with_claude_contextual(
+        self,
+        user_text: str,
+        language: str,
+        session: Any,
+        intent: str,
+        profile_gaps: List[str]
+    ) -> str:
+        """
+        Process user query with Claude AI using conversation context
+        
+        Args:
+            user_text: Transcribed user text
+            language: Language code
+            session: Conversation session
+            intent: Detected intent
+            profile_gaps: Missing profile information
+        
+        Returns:
+            AI-generated response text
+        """
+        try:
+            # Build context-aware prompt
+            prompt = self._build_contextual_prompt(
+                user_text=user_text,
+                language=language,
+                session=session,
+                intent=intent,
+                profile_gaps=profile_gaps
+            )
+            
+            # Call Bedrock Claude
+            request_body = {
+                "anthropic_version": "bedrock-2023-05-31",
+                "max_tokens": 500,
+                "temperature": 0.7,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            }
+            
+            logger.info(f"Calling Claude with contextual prompt (length: {len(prompt)})")
+            
+            response = self.bedrock_client.invoke_model(
+                modelId=self.claude_model,
+                body=json.dumps(request_body)
+            )
+            
+            # Parse response
+            response_body = json.loads(response['body'].read())
+            ai_text = response_body['content'][0]['text']
+            
+            logger.info(f"Claude response: {ai_text[:100]}...")
+            
+            return ai_text
+            
+        except ClientError as e:
+            error_code = e.response['Error']['Code']
+            if error_code == 'AccessDeniedException':
+                logger.error("Bedrock access denied. Please request model access in AWS Console.")
+                return "I'm currently unable to process your request. Please contact support."
+            else:
+                logger.error(f"Bedrock error: {str(e)}")
+                return "I'm having trouble understanding your request. Please try again."
+        
+        except Exception as e:
+            logger.error(f"Claude processing error: {str(e)}", exc_info=True)
+            return "I'm having trouble processing your request. Please try again."
+    
+    def _build_contextual_prompt(
+        self,
+        user_text: str,
+        language: str,
+        session: Any,
+        intent: str,
+        profile_gaps: List[str]
+    ) -> str:
+        """Build context-aware prompt for Claude"""
+        
+        language_names = {
+            "en": "English",
+            "hi": "Hindi",
+            "ta": "Tamil",
+            "te": "Telugu",
+            "mr": "Marathi",
+            "kn": "Kannada"
+        }
+        
+        lang_name = language_names.get(language, "English")
+        profile = session.citizen_profile
+        
+        # Build conversation history context
+        history = self.conversation_manager.get_conversation_history(session, last_n=3)
+        history_text = "\n".join([
+            f"{msg.role}: {msg.content}" for msg in history
+        ])
+        
+        # Build citizen profile context
+        profile_context = f"""
+Current citizen information known:
+- Language: {lang_name}
+- State: {profile.state or "Not provided"}
+- Occupation: {profile.occupation or "Not provided"}
+- Farmer: {"Yes" if profile.is_farmer else "Unknown"}
+- Student: {"Yes" if profile.is_student else "Unknown"}
+"""
+        
+        # Determine response strategy
+        if intent == "SEARCH_SCHEMES" and profile_gaps:
+            # Need to ask for missing information
+            strategy = f"""
+Your task: Ask for ONE missing piece of information to help find relevant schemes.
+Missing information: {', '.join(profile_gaps)}
+Ask only for the MOST IMPORTANT missing item. Be conversational and natural.
+"""
+        elif intent == "SEARCH_SCHEMES" and not profile_gaps:
+            # Have enough info to search
+            strategy = f"""
+Your task: Inform the user that you're searching for relevant schemes based on their profile.
+Confirm what you know about them and tell them you'll find matching schemes.
+"""
+        else:
+            # General conversational response
+            strategy = f"""
+Your task: Provide a helpful, conversational response in {lang_name}.
+Help them understand how to use the platform to find government welfare schemes.
+"""
+        
+        prompt = f"""You are a helpful assistant for Voice for Bharat, helping Indian citizens find government welfare schemes.
+
+{profile_context}
+
+Recent conversation:
+{history_text if history_text else "This is the first message."}
+
+User's current query (in {lang_name}): {user_text}
+
+{strategy}
+
+IMPORTANT RULES:
+1. Respond ONLY in {lang_name}
+2. Be warm, conversational, and empathetic
+3. Keep response to 2-3 sentences maximum
+4. Do NOT ask for multiple pieces of information at once
+5. Do NOT repeat questions already answered
+6. Do NOT invent scheme details - only acknowledge their request
+
+Your response in {lang_name}:"""
+
+        return prompt
+    
+    async def _generate_error_response(
+        self,
+        error_message: str,
+        language: str,
+        session_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Generate error response with audio"""
+        
+        # Translate error message if needed
+        error_messages = {
+            "en": error_message,
+            "hi": "क्षमा करें, मुझे समझ नहीं आया। कृपया दोबारा कहें।",
+            "ta": "மன்னிக்கவும், எனக்கு புரியவில்லை. தயவுசெய்து மீண்டும் சொல்லுங்கள்.",
+            "te": "క్షమించండి, నాకు అర్థం కాలేదు. దయచేసి మళ్లీ చెప్పండి.",
+            "mr": "माफ करा, मला समजले नाही. कृपया पुन्हा सांगा.",
+            "kn": "ಕ್ಷಮಿಸಿ, ನನಗೆ ಅರ್ಥವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಹೇಳಿ."
+        }
+        
+        localized_message = error_messages.get(language, error_message)
+        audio_url = await self.synthesize_speech(localized_message, language)
+        
+        return {
+            "success": False,
+            "error": error_message,
+            "response_text": localized_message,
+            "audio_url": audio_url,
+            "language": language,
+            "session_id": session_id
         }
