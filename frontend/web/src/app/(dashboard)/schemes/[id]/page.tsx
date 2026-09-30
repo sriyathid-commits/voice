@@ -5,11 +5,11 @@ import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import { EligibilityCard } from '@/components/schemes/EligibilityCard';
-import { ActionPlan } from '@/components/schemes/ActionPlan';
+// import { EligibilityCard } from '@/components/schemes/EligibilityCard';
+// import { ActionPlan } from '@/components/schemes/ActionPlan';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
-import type { Scheme, EligibilityExplanation, ActionPlanStep } from '@/types';
+import type { Scheme } from '@/types';
 
 export default function SchemeDetailPage() {
   const params = useParams();

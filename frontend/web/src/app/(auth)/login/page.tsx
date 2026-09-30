@@ -41,7 +41,7 @@ export default function LoginPage() {
         phoneNumber: `+91${phoneNumber}`,
       });
       
-      if (response.data.success) {
+      if ((response as any).success) {
         addToast('success', 'OTP sent successfully! Check your phone.');
         setStep('otp');
       }
@@ -71,10 +71,10 @@ export default function LoginPage() {
         otp,
       });
       
-      if (response.data.success) {
+      if ((response as any).success) {
         // Store auth data
-        setToken(response.data.token);
-        setUser(response.data.user);
+        setToken((response as any).token);
+        setUser((response as any).user);
         
         addToast('success', 'Login successful! Welcome to Voice for Bharat.');
         

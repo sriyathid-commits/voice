@@ -195,7 +195,7 @@ export default function NewApplicationPage() {
     setSubmitting(true);
     
     try {
-      const response = await api.post<{ applicationId: string }>('/applications', {
+      await api.post<{ applicationId: string }>('/applications', {
         schemeId,
         applicantDetails: formData,
         documents: documents.map(doc => doc.id),
@@ -244,7 +244,7 @@ export default function NewApplicationPage() {
         </button>
         
         <h1 className="text-3xl font-bold text-gray-900 mb-2">Apply for Scheme</h1>
-        <p className="text-lg text-gray-700">{scheme.name}</p>
+        <p className="text-lg text-gray-700">{typeof scheme.name === 'object' ? scheme.name.en || scheme.name[Object.keys(scheme.name)[0]] : scheme.name}</p>
       </div>
       
       {/* Applicant Details */}
@@ -359,14 +359,9 @@ export default function NewApplicationPage() {
                       </Button>
                     ) : (
                       <label className="cursor-pointer">
-                        <Button
-                          as="span"
-                          variant="secondary"
-                          size="sm"
-                          disabled={isUploading}
-                        >
+                        <span className="inline-flex items-center px-4 py-2 border border-gray-300 shadow-sm text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed">
                           {isUploading ? 'Uploading...' : 'Upload'}
-                        </Button>
+                        </span>
                         <input
                           type="file"
                           className="hidden"
