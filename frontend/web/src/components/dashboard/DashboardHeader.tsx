@@ -1,5 +1,10 @@
+'use client'
+
 import React from 'react'
+import { useRouter } from 'next/navigation'
 import { INDIAN_STATES, SUPPORTED_LANGUAGES } from '@/lib/constants'
+import { useAuthStore } from '@/store/authStore'
+import { useToast } from '@/components/ui/Toast'
 
 interface DashboardHeaderProps {
   selectedState: string
@@ -14,6 +19,16 @@ export function DashboardHeader({
   onStateChange,
   onLanguageChange
 }: DashboardHeaderProps) {
+  const router = useRouter()
+  const { logout, user } = useAuthStore()
+  const { addToast } = useToast()
+  
+  const handleLogout = () => {
+    logout()
+    addToast('success', 'Logged out successfully')
+    router.push('/login')
+  }
+  
   return (
     <div className="bg-gradient-to-r from-orange-500 to-green-500 text-white p-6">
       <div className="max-w-7xl mx-auto">
@@ -25,6 +40,11 @@ export function DashboardHeader({
             <p className="text-orange-100 text-sm md:text-base">
               NATIONAL DIGITAL INCLUSION PROJECT
             </p>
+            {user && (
+              <p className="text-orange-100 text-xs mt-1">
+                Welcome, {user.profile?.name || user.phoneNumber}
+              </p>
+            )}
           </div>
           
           <div className="flex flex-col sm:flex-row gap-4">
@@ -64,10 +84,17 @@ export function DashboardHeader({
               </select>
             </div>
 
-            {/* Help Button */}
+            {/* Logout Button */}
             <div className="flex flex-col justify-end">
-              <button className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white hover:bg-white/20 transition-colors">
-                <span className="text-lg">?</span>
+              <button 
+                onClick={handleLogout}
+                className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white hover:bg-white/20 transition-colors flex items-center gap-2"
+                title="Logout"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                </svg>
+                <span className="hidden sm:inline">Logout</span>
               </button>
             </div>
           </div>

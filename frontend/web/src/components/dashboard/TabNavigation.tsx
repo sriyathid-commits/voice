@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils'
 const tabs = [
   { id: 'dashboard', label: 'DASHBOARD', icon: '🏠', href: '/dashboard' },
   { id: 'assistant', label: 'ASSISTANT', icon: '🎤', href: '/assistant' },
-  { id: 'guide', label: 'GUIDE', icon: '📖', href: '/guide' }
+  { id: 'schemes', label: 'SCHEMES', icon: '📋', href: '/schemes' },
+  { id: 'profile', label: 'PROFILE', icon: '👤', href: '/profile' }
 ]
 
 export function TabNavigation() {

@@ -37,10 +37,14 @@ apiClient.interceptors.request.use(
 // Response interceptor - handle errors
 apiClient.interceptors.response.use(
   (response) => response,
-  (error: AxiosError) => {
+  (error: AxiosError<any>) => {
+    // Create user-friendly error message
+    let errorMessage = 'An unexpected error occurred'
+    
     if (error.response) {
       // Server responded with error status
       const status = error.response.status
+      const data = error.response.data
       
       if (status === 401) {
         // Unauthorized - clear auth and redirect to login
@@ -48,23 +52,32 @@ apiClient.interceptors.response.use(
           localStorage.removeItem('auth-storage')
           window.location.href = '/login'
         }
+        errorMessage = 'Session expired. Please login again.'
       } else if (status === 403) {
-        // Forbidden
-        console.error('Access forbidden:', error.response.data)
+        errorMessage = 'You do not have permission to access this resource'
       } else if (status === 404) {
-        // Not found
-        console.error('Resource not found:', error.response.data)
+        errorMessage = 'Resource not found'
+      } else if (status === 422) {
+        errorMessage = data?.message || 'Validation error. Please check your input.'
       } else if (status >= 500) {
-        // Server error
-        console.error('Server error:', error.response.data)
+        errorMessage = 'Server error. Please try again later.'
+      } else if (data?.message) {
+        errorMessage = data.message
       }
+      
+      console.error(`API Error [${status}]:`, errorMessage, data)
     } else if (error.request) {
       // Request made but no response
-      console.error('No response from server:', error.request)
+      errorMessage = 'No response from server. Please check your internet connection.'
+      console.error('Network error:', error.request)
     } else {
       // Error in request setup
-      console.error('Request error:', error.message)
+      errorMessage = error.message || errorMessage
+      console.error('Request setup error:', error.message)
     }
+    
+    // Attach user-friendly message to error
+    error.message = errorMessage
     
     return Promise.reject(error)
   }

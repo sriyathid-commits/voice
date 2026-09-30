@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: voice-for-bharat
+    runtime: node
+    region: singapore  # closest to India
+    plan: free
+    rootDir: frontend/web
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: "20.x"
+      - key: PORT
+        value: "3000"
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_PUBLIC_API_URL
+        sync: false   # Set manually in Render dashboard
+      - key: NEXT_PUBLIC_WS_URL
+        sync: false
+      - key: NEXT_PUBLIC_CLOUDFRONT_URL
+        sync: false
+      - key: NEXT_PUBLIC_COGNITO_USER_POOL_ID
+        sync: false
+      - key: NEXT_PUBLIC_COGNITO_CLIENT_ID
+        sync: false
+      - key: NEXT_PUBLIC_COGNITO_REGION
+        value: ap-south-1
+      - key: NEXT_PUBLIC_ENABLE_PWA
+        value: "true"
+      - key: NEXT_PUBLIC_ENABLE_VOICE_ASSISTANT
+        value: "true"
+      - key: NEXT_PUBLIC_ENABLE_OFFLINE_MODE
+        value: "false"
+    healthCheckPath: /
+    autoDeploy: true
