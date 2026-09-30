@@ -468,5 +468,52 @@ async def update_profile(user_id: str, request: UpdateProfileRequest):
     )
 
 
+@app.get("/activity")
+async def get_user_activity(
+    user_id: str = Query(..., description="User ID"),
+    limit: int = Query(20, ge=1, le=100, description="Number of activities to return"),
+    activity_type: Optional[str] = Query(None, description="Filter by activity type")
+):
+    """Get user activity log with optional filtering."""
+    table = dynamodb.Table(get_table_name("activity_log"))
+    
+    try:
+        if activity_type:
+            # Query with type filter
+            resp = table.query(
+                IndexName="userId-type-index",
+                KeyConditionExpression="userId = :uid AND #t = :type",
+                ExpressionAttributeNames={"#t": "type"},
+                ExpressionAttributeValues={":uid": user_id, ":type": activity_type},
+                ScanIndexForward=False,  # Most recent first
+                Limit=limit
+            )
+        else:
+            # Query all activities for user
+            resp = table.query(
+                IndexName="userId-timestamp-index", 
+                KeyConditionExpression="userId = :uid",
+                ExpressionAttributeValues={":uid": user_id},
+                ScanIndexForward=False,  # Most recent first
+                Limit=limit
+            )
+    except Exception:
+        # Fallback to scan if GSI doesn't exist
+        resp = table.scan(
+            FilterExpression="userId = :uid",
+            ExpressionAttributeValues={":uid": user_id},
+            Limit=limit
+        )
+        
+    items = resp.get("Items", [])
+    # Sort by timestamp desc if using scan fallback
+    items.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
+    
+    return {
+        "activities": items[:limit],
+        "count": len(items)
+    }
+
+
 # Lambda handler
 handler = Mangum(app, lifespan="off")

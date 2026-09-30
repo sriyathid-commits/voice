@@ -214,10 +214,10 @@ def save_scheme(
         # Add scheme if not already saved
         if scheme_id not in saved_schemes:
             saved_schemes.append(scheme_id)
-            
-            # Update user profile
+
+            # Update user profile — partition key is userId (camelCase per DynamoDB schema)
             scheme_service.user_profile_table.update_item(
-                Key={"user_id": request.user_id},
+                Key={"userId": request.user_id},
                 UpdateExpression="SET saved_schemes = :schemes",
                 ExpressionAttributeValues={":schemes": saved_schemes}
             )
@@ -387,12 +387,18 @@ def get_eligibility_explanation(
 
 
 # POST /schemes/{scheme_id}/action-plan - Generate citizen action plan
+
+class ActionPlanRequest(BaseModel):
+    """Request body for action plan generation"""
+    user_profile: dict
+    available_documents: Optional[List[str]] = []
+    language: str = "en"
+
+
 @app.post("/schemes/{scheme_id}/action-plan")
 def generate_action_plan(
     scheme_id: str,
-    user_profile: dict,
-    available_documents: List[str] = Query([], description="Documents user currently has"),
-    language: str = Query("en", description="Language code")
+    request: ActionPlanRequest,
 ):
     """
     Generate actionable citizen plan for scheme application
@@ -422,14 +428,14 @@ def generate_action_plan(
         from action_plan_generator import ActionPlanGenerator
         
         # Get scheme
-        scheme = scheme_service.get_scheme_by_id(scheme_id, language=language)
+        scheme = scheme_service.get_scheme_by_id(scheme_id, language=request.language)
         if not scheme:
             raise HTTPException(status_code=404, detail="Scheme not found")
         
         # Check eligibility
         eligibility = scheme_service.check_eligibility(
             scheme_id=scheme_id,
-            user_profile=user_profile
+            user_profile=request.user_profile
         )
         
         # Generate action plan
@@ -437,8 +443,8 @@ def generate_action_plan(
         action_plan = action_plan_gen.generate_action_plan(
             scheme=scheme,
             eligibility=eligibility,
-            available_documents=available_documents,
-            language=language
+            available_documents=request.available_documents,
+            language=request.language
         )
         
         return {

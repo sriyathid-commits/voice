@@ -183,12 +183,13 @@ async def process_voice_query(
         # Read audio file
         audio_data = await audio.read()
         
-        # Process voice query
+        # Process voice query — session_id is passed as a keyword arg;
+        # the service signature is (audio_data, language, user_id, session_id=None)
         response = await voice_service.process_voice_query(
             audio_data=audio_data,
-            session_id=session_id,
             language=language,
-            user_id=user_id
+            user_id=user_id,
+            session_id=session_id or None,
         )
         
         return JSONResponse(content=response)
