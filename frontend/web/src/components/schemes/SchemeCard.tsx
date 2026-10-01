@@ -27,13 +27,6 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme, onSave, isSaved 
     return colors[category] || 'bg-gray-100 text-gray-800';
   };
   
-  const getEligibilityColor = (score: number) => {
-    if (score >= 80) return 'bg-green-500';
-    if (score >= 60) return 'bg-blue-500';
-    if (score >= 40) return 'bg-yellow-500';
-    return 'bg-gray-400';
-  };
-  
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
       <div className="p-6">
@@ -41,13 +34,13 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme, onSave, isSaved 
         <div className="flex items-start justify-between mb-3">
           <div className="flex-1">
             <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {scheme.name}
+              {scheme.name['en'] || Object.values(scheme.name)[0]}
             </h3>
             <div className="flex flex-wrap gap-2">
               <Badge className={getCategoryColor(scheme.category)}>
                 {scheme.category}
               </Badge>
-              <Badge variant="outline">
+              <Badge variant="info">
                 {scheme.state}
               </Badge>
             </div>
@@ -72,7 +65,7 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme, onSave, isSaved 
         
         {/* Description */}
         <p className="text-gray-600 text-sm mb-4 line-clamp-2">
-          {scheme.description}
+          {scheme.description['en'] || Object.values(scheme.description)[0]}
         </p>
         
         {/* Benefits */}
@@ -80,13 +73,13 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme, onSave, isSaved 
           <div className="mb-4">
             <p className="text-sm font-medium text-gray-700 mb-1">Benefits:</p>
             <p className="text-sm text-green-600">
-              {scheme.benefits}
+              {scheme.benefits['en'] || Object.values(scheme.benefits)[0]}
             </p>
           </div>
         )}
         
         {/* Eligibility Score */}
-        {scheme.eligibilityScore !== undefined && (
+        {/* {scheme.eligibilityScore !== undefined && (
           <div className="mb-4">
             <div className="flex items-center justify-between mb-1">
               <span className="text-sm font-medium text-gray-700">Eligibility Match</span>
@@ -99,7 +92,7 @@ export const SchemeCard: React.FC<SchemeCardProps> = ({ scheme, onSave, isSaved 
               />
             </div>
           </div>
-        )}
+        )} */}
         
         {/* Footer Actions */}
         <div className="flex flex-wrap gap-2">

@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useSchemeStore } from '@/store/schemeStore'
 import { useVoiceStore } from '@/store/voiceStore'
 

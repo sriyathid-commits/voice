@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/Card';
 import { useToast } from '@/components/ui/Toast';
 import { api } from '@/lib/api';
 import type { Scheme } from '@/types';
+import type { EligibilityExplanation, ActionPlanStep } from '@/store/schemeStore';
 
 export default function SchemeDetailPage() {
   const params = useParams();
@@ -144,10 +145,10 @@ export default function SchemeDetailPage() {
       <div className="mb-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-gray-900 mb-2">{scheme.name}</h1>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{scheme.name['en'] || Object.values(scheme.name)[0]}</h1>
             <div className="flex flex-wrap gap-2">
               <Badge>{scheme.category}</Badge>
-              <Badge variant="outline">{scheme.state}</Badge>
+              <Badge variant="info">{scheme.state}</Badge>
               {scheme.isActive && <Badge variant="success">Active</Badge>}
             </div>
           </div>
@@ -166,7 +167,7 @@ export default function SchemeDetailPage() {
           </button>
         </div>
         
-        <p className="text-lg text-gray-700">{scheme.description}</p>
+        <p className="text-lg text-gray-700">{scheme.description['en'] || Object.values(scheme.description)[0]}</p>
       </div>
       
       {/* Scheme Details */}
@@ -177,7 +178,7 @@ export default function SchemeDetailPage() {
           {scheme.benefits && (
             <div>
               <h3 className="font-medium text-gray-900 mb-1">Benefits</h3>
-              <p className="text-gray-700">{scheme.benefits}</p>
+              <p className="text-gray-700">{scheme.benefits['en'] || Object.values(scheme.benefits)[0]}</p>
             </div>
           )}
           
@@ -185,14 +186,14 @@ export default function SchemeDetailPage() {
             <div>
               <h3 className="font-medium text-gray-900 mb-2">Eligibility Criteria</h3>
               <ul className="list-disc list-inside space-y-1 text-gray-700">
-                {scheme.eligibilityCriteria.ageRange && (
-                  <li>Age: {scheme.eligibilityCriteria.ageRange.min} - {scheme.eligibilityCriteria.ageRange.max} years</li>
+                {(scheme.eligibilityCriteria.minAge || scheme.eligibilityCriteria.maxAge) && (
+                  <li>Age: {scheme.eligibilityCriteria.minAge || 0} - {scheme.eligibilityCriteria.maxAge || '∞'} years</li>
                 )}
                 {scheme.eligibilityCriteria.gender && scheme.eligibilityCriteria.gender.length > 0 && (
                   <li>Gender: {scheme.eligibilityCriteria.gender.join(', ')}</li>
                 )}
-                {scheme.eligibilityCriteria.incomeRange && (
-                  <li>Income: Up to ₹{scheme.eligibilityCriteria.incomeRange.max.toLocaleString()}</li>
+                {scheme.eligibilityCriteria.incomeLimit && (
+                  <li>Income: Up to ₹{scheme.eligibilityCriteria.incomeLimit.toLocaleString()}</li>
                 )}
                 {scheme.eligibilityCriteria.categories && scheme.eligibilityCriteria.categories.length > 0 && (
                   <li>Categories: {scheme.eligibilityCriteria.categories.join(', ')}</li>
@@ -248,7 +249,12 @@ export default function SchemeDetailPage() {
       {/* Eligibility Results */}
       {eligibility && (
         <div className="mb-6">
-          <EligibilityCard eligibility={eligibility} />
+          {/* <EligibilityCard eligibility={eligibility} /> */}
+          <Card>
+            <h3 className="text-lg font-semibold mb-2">Eligibility Results</h3>
+            <p>Status: {eligibility.status}</p>
+            <p>Score: {eligibility.score}</p>
+          </Card>
         </div>
       )}
       
@@ -269,7 +275,11 @@ export default function SchemeDetailPage() {
       {/* Action Plan */}
       {actionPlan && (
         <div className="mb-6">
-          <ActionPlan steps={actionPlan} scheme={scheme} />
+          {/* <ActionPlan steps={actionPlan} scheme={scheme} /> */}
+          <Card>
+            <h3 className="text-lg font-semibold mb-2">Action Plan</h3>
+            <p>{actionPlan.length} steps available</p>
+          </Card>
         </div>
       )}
     </div>

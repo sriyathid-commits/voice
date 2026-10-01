@@ -12,13 +12,13 @@ import { api } from '@/lib/api';
 import { INDIAN_STATES } from '@/lib/constants';
 
 const GENDER_OPTIONS = [
-  { value: 'Male', label: 'Male' },
-  { value: 'Female', label: 'Female' },
-  { value: 'Other', label: 'Other' },
+  { value: 'MALE', label: 'Male' },
+  { value: 'FEMALE', label: 'Female' },
+  { value: 'OTHER', label: 'Other' },
 ];
 
 const CATEGORY_OPTIONS = [
-  { value: 'General', label: 'General' },
+  { value: 'GENERAL', label: 'General' },
   { value: 'OBC', label: 'OBC' },
   { value: 'SC', label: 'SC' },
   { value: 'ST', label: 'ST' },
@@ -47,7 +47,7 @@ const EDUCATION_OPTIONS = [
 ];
 
 export default function ProfilePage() {
-  const { user, updateProfile } = useAuthStore();
+  const { updateProfile } = useAuthStore();
   const { addToast } = useToast();
   
   const [loading, setLoading] = useState(true);
@@ -170,10 +170,9 @@ export default function ProfilePage() {
       // Update local state
       updateProfile({
         name: formData.name,
-        gender: formData.gender,
+        gender: formData.gender as any,
         state: formData.state,
-        category: formData.category,
-        occupation: formData.occupation,
+        category: formData.category as any,
       });
       
       addToast('success', 'Profile updated successfully');

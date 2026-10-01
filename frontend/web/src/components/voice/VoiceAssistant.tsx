@@ -18,7 +18,7 @@ export default function VoiceAssistant() {
     citizenProfile,
     currentTranscript,
     currentResponse,
-    currentAudioUrl,
+    // currentAudioUrl,
     selectedLanguage,
     profileGaps,
     error,

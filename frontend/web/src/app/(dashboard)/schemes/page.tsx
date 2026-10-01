@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { Input } from '@/components/ui/Input';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { Button } from '@/components/ui/Button';
@@ -22,7 +21,6 @@ const CATEGORIES = [
 ];
 
 export default function SchemesPage() {
-  const searchParams = useSearchParams();
   const { addToast } = useToast();
   
   const [schemes, setSchemes] = useState<Scheme[]>([]);
@@ -66,10 +64,15 @@ export default function SchemesPage() {
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(
-        (scheme) =>
-          scheme.name.toLowerCase().includes(query) ||
-          scheme.description.toLowerCase().includes(query) ||
-          scheme.category.toLowerCase().includes(query)
+        (scheme) => {
+          const name = scheme.name['en'] || Object.values(scheme.name)[0] || '';
+          const description = scheme.description['en'] || Object.values(scheme.description)[0] || '';
+          return (
+            name.toLowerCase().includes(query) ||
+            description.toLowerCase().includes(query) ||
+            scheme.category.toLowerCase().includes(query)
+          );
+        }
       );
     }
     
