@@ -1,0 +1,17 @@
+# Voice for Bharat - Vercel Environment Variables
+# Copy these values to Vercel Dashboard → Settings → Environment Variables
+
+# API Configuration
+NEXT_PUBLIC_API_URL=https://1dohk3jdqi.execute-api.ap-south-1.amazonaws.com/dev
+NEXT_PUBLIC_WS_URL=wss://2d60i6teuk.execute-api.ap-south-1.amazonaws.com/dev
+NEXT_PUBLIC_CLOUDFRONT_URL=https://d23j2wdvtfs00j.cloudfront.net
+
+# AWS Cognito
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=ap-south-1_rccqmr4qn
+NEXT_PUBLIC_COGNITO_CLIENT_ID=224qgvcd8bk0dhplrbf31r4333
+NEXT_PUBLIC_COGNITO_REGION=ap-south-1
+
+# Feature Flags
+NEXT_PUBLIC_ENABLE_PWA=true
+NEXT_PUBLIC_ENABLE_VOICE_ASSISTANT=true
+NEXT_PUBLIC_ENABLE_OFFLINE_MODE=true
