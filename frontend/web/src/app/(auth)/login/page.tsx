@@ -34,6 +34,43 @@ export default function LoginPage() {
       return;
     }
     
+    // ============================================
+    // TEST MODE: Bypass OTP for demo purposes
+    // ============================================
+    const TEST_PHONE_NUMBERS = ['9876543210', '1234567890', '9999999999'];
+    
+    if (TEST_PHONE_NUMBERS.includes(phoneNumber)) {
+      // Create mock user data for testing
+      const mockUser = {
+        userId: `test-user-${phoneNumber}`,
+        phoneNumber: phoneNumber,
+        language: 'en',
+        profile: {
+          name: 'Demo User',
+          state: 'Maharashtra',
+        },
+      };
+      
+      const mockToken = `test-token-${Date.now()}`;
+      
+      // Store in auth store
+      setToken(mockToken);
+      setUser(mockUser);
+      
+      // Show success message
+      addToast('success', '✅ Demo Mode: Login successful!');
+      
+      // Redirect to dashboard
+      setTimeout(() => {
+        router.push('/dashboard');
+      }, 500);
+      
+      return;
+    }
+    // ============================================
+    // END TEST MODE
+    // ============================================
+    
     setLoading(true);
     
     try {
@@ -155,6 +192,16 @@ export default function LoginPage() {
               >
                 {loading ? 'Sending OTP...' : 'Send OTP'}
               </Button>
+              
+              {/* Demo Mode Info */}
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <p className="text-xs text-blue-800 font-medium mb-1">
+                  🎯 Demo Mode Available
+                </p>
+                <p className="text-xs text-blue-700">
+                  Use <span className="font-mono font-bold">9876543210</span> to access demo without OTP
+                </p>
+              </div>
               
               <p className="text-sm text-gray-500 mt-4 text-center">
                 We'll send you a 6-digit verification code
