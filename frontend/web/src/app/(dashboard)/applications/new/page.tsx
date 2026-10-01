@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -10,6 +10,9 @@ import { useAuthStore } from '@/store/authStore';
 import { api } from '@/lib/api';
 import type { Scheme } from '@/types';
 
+// Force dynamic rendering
+export const dynamic = 'force-dynamic';
+
 interface UploadedDocument {
   id: string;
   type: string;
@@ -18,12 +21,13 @@ interface UploadedDocument {
   uploadedAt: string;
 }
 
-export default function NewApplicationPage() {
+function NewApplicationPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { addToast } = useToast();
   const { user } = useAuthStore();
   
+  const [mounted, setMounted] = useState(false);
   const schemeId = searchParams.get('schemeId');
   
   const [scheme, setScheme] = useState<Scheme | null>(null);
@@ -44,6 +48,10 @@ export default function NewApplicationPage() {
   
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   
   useEffect(() => {
     if (!schemeId) {
@@ -211,7 +219,7 @@ export default function NewApplicationPage() {
     }
   };
   
-  if (loading) {
+  if (!mounted || loading) {
     return (
       <div className="animate-pulse space-y-6">
         <div className="h-8 bg-gray-200 rounded w-1/3"></div>
@@ -414,5 +422,19 @@ export default function NewApplicationPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+
+export default function NewApplicationPage() {
+  return (
+    <Suspense fallback={
+      <div className="animate-pulse space-y-6">
+        <div className="h-8 bg-gray-200 rounded w-1/3"></div>
+        <div className="h-64 bg-gray-200 rounded"></div>
+      </div>
+    }>
+      <NewApplicationPageContent />
+    </Suspense>
   );
 }

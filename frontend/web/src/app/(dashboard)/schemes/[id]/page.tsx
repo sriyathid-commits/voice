@@ -12,6 +12,8 @@ import { api } from '@/lib/api';
 import type { Scheme } from '@/types';
 import type { EligibilityExplanation, ActionPlanStep } from '@/store/schemeStore';
 
+export const dynamic = 'force-dynamic';
+
 export default function SchemeDetailPage() {
   const params = useParams();
   const router = useRouter();
